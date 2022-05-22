@@ -8,7 +8,6 @@
  * terminate flag is set, the getNextMove function will be given a short amount
  * of time to exit.  If it does not, a Exception will be invoked.
  * 
- * @see RandomAI, StupidAI, MonteCarloAI
  */
 public abstract class AIModule
 {

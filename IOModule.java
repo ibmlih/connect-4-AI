@@ -1,8 +1,7 @@
 /// Base class for all I/O modules.
 /**
  * This interface acts as the root interface for any possible devices that can be used
- * for game input and output.  You will not need to implement this interface in your solution.
- * 
+ * for game input and output.
  */
 public interface IOModule
 {

@@ -6,10 +6,7 @@ import java.util.concurrent.*;
 
 /**
  * A window class that displays the game and is responsible for performing human
- * IO if necessary.  You should not need to worry about the contents of this
- * class, as none of the methods contained here will be necessary for developing
- * an AI player.
- * 
+ * IO if necessary. 
  */
 public final class Display extends javax.swing.JPanel implements IOModule, MouseListener, MouseMotionListener
 {

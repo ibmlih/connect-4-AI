@@ -1,68 +1,72 @@
 import java.awt.Point;
-import java.util.*;
 
-/// Representation of a game of Connect Four to be used if an optimized version cannot be found.
+/// Representation of a game of Connect Four optimized for the traditional 7x6 board size.
 /**
+ * This class uses two longs as bitboards for the respective players such that the
+ * bits are represented in the following manner:
+ *
+ * ................... -= TOP		\n
+ * 5.12.19.26.33.40.47				\n
+ * 4.11.18.25.32.39.46				\n
+ * 3.10.17.24.31.38.45				\n
+ * 2..9.16.23.30.37.44				\n
+ * 1..8.15.22.29.36.43				\n
+ * 0..7.14.21.28.35.42 -= BOTTOM	\n
+ *
+ * A bit is set to one it the player has a coin in that position.
+ *
  * @see GameStateModule
  */
 public final class GameState_General implements GameStateModule
 {
-	/// Keeps track of the current player.
-	private int ActivePlayer;
-	/// Keeps track of the contents of all tiles. 0 represents empty.
-	private int[][] Board;
-	/// Keeps track of the number of filled items in each colomn.
-	private int[] Heights;
-	/// The player that was declared the victor of the game.
+	private final static int WIDTH = 7;
+	private final static int HEIGHT = 6;
+	/// Amount to shift the bitboard to move over one column.
+	private final static int H1 = HEIGHT + 1;
+	/// Amount to shift the bitboard to move over one column and up one row.
+	private final static int H2 = HEIGHT + 2;
+	private final static int SIZE = HEIGHT * WIDTH;
+	/// Bitboard with just the above-top row filled in.
+	private final static long TOP = 0x1020408102040L;
+	/// Player bitboards.
+	private final long color[] = new long[2];
+	/// History of plays.
+	private final int moves[] = new int[SIZE];
+	/// Number of moves executed.
+	private int nplies = 0;
+	private int coins = 0;
+	/// Holds the bit index of lowest free tile in a given column.
+	private final byte height[] = new byte[WIDTH];
+	private boolean gameOver = false;
 	private int Winner;
-	/// Used by the graphics module for drawing victory states.  You will not need to use this.
+	private boolean pointsComputed = false;
 	private Point startPt;
-	/// Used by the graphics module for drawing victory states.  You will not need to use this.
 	private Point endPt;
-	/// Width of the board
-	private int WIDTH;
-	/// Height of the board
-	private int HEIGHT;
-	/// Game history for makeMove / unMakeMove
-	/**
-	 * This stack is used to keep track of the move history for makeMove and unMakeMove.
-	 */
-	private final Stack<Integer> history = new Stack<Integer>();
-	/// The number of coins on the board.
-	private int Coins;
 
 	/// Primary Constructor.
 	/**
 	 * Creates a new game board of the specified width and height.  The starting player
 	 * is player 1 and the board is initially empty and with no undo/redo history.
-	 *
-	 * @param w The width of the board.
-	 * @param h The height of the board.
+	 * Width and Height are preset.
 	 */
-	public GameState_General(final int w, final int h)
+	public GameState_General()
 	{
-		ActivePlayer = 1;
-		Winner = -1;
-		WIDTH = w;
-		HEIGHT = h;
-		Coins = 0;
-		Board = new int[WIDTH][HEIGHT];
-		Heights = new int[WIDTH];
+		color[0] = color[1] = 0L;
 		for(int i = 0; i < WIDTH; i++)
-			Arrays.fill(Board[i], 0);
-		Arrays.fill(Heights, 0);
+			height[i] = (byte) (H1 * i);
 	}
 
 	/// Creates a deep copy of this.
 	public GameState_General copy()
 	{
-		final GameState_General game = new GameState_General(WIDTH, HEIGHT);
-		game.ActivePlayer = ActivePlayer;
+		final GameState_General game = new GameState_General();
+		System.arraycopy(color, 0, game.color, 0, 2);
+		System.arraycopy(moves, 0, game.moves, 0, SIZE);
+		System.arraycopy(height, 0, game.height, 0, WIDTH);
+		game.nplies = nplies;
+		game.coins = coins;
+		game.gameOver = gameOver;
 		game.Winner = Winner;
-		game.Coins = Coins;
-		for(int i = 0; i < WIDTH; i++)
-			System.arraycopy(Board[i], 0, game.Board[i], 0, Board[i].length);
-		System.arraycopy(Heights, 0, game.Heights, 0, Heights.length);
 		return game;
 	}
 
@@ -75,38 +79,30 @@ public final class GameState_General implements GameStateModule
 	 */
 	public boolean canMakeMove(final int x)
 	{
-		return x >= 0 && x < WIDTH && Heights[x] < HEIGHT && Winner == -1;
+		if(x < 0 || x >= WIDTH || gameOver)
+			return false;
+		final long newBoard = color[nplies & 1] | (1L << height[x]);
+		return (newBoard & TOP) == 0;
 	}
 
-	/// Makes the specified move for the active player.
+	/// Used internally to check for victory.
 	/**
-	 * Makes the specified move for the active player.  This updates the game
-	 * history and can be undone with unMakeMove.  If the move is illegal,
-	 * throws a RuntimeException exception.
-	 *
-	 * @param x The move to be made.
-	 * @throws RuntimeException If the move is illegal.
-	 * @see unMakeMove
+	 * @param board Bitboard from one of the players.
+	 * @return Determines if a player has won the game.
 	 */
-	public void makeMove(final int x) throws RuntimeException
+	private boolean computeVictory(final long board)
 	{
-		// If the move is out of range, then the move is invalid
-		if(!canMakeMove(x))
-			throw new RuntimeException("Illegal Move: " + x);
-
-		// Update the Board
-		Board[x][Heights[x]] = getActivePlayer();
-		// Update the Heights
-		Heights[x]++;
-		// Update the Player
-		ActivePlayer = (ActivePlayer == 1) ? 2 : 1;
-
-		Coins++;
-
-		// Keep track of the history of this move.
-		history.push(x);
-
-		computeVictory();
+		long temp = board & (board >> HEIGHT);
+		if((temp & (temp >> 2 * HEIGHT)) != 0) // check diagonal \
+			return true;
+		temp = board & (board >> H1);
+		if((temp & (temp >> 2 * H1)) != 0) // check horizontal -
+			return true;
+		temp = board & (board >> H2); // check diagonal /
+		if((temp & (temp >> 2 * H2)) != 0)
+			return true;
+		temp = board & (board >> 1); // check vertical |
+		return (temp & (temp >> 2)) != 0;
 	}
 
 	/// Undoes the most recent action.
@@ -119,15 +115,40 @@ public final class GameState_General implements GameStateModule
 	 */
 	public void unMakeMove()
 	{
-		final int x = history.pop();
-		Coins--;
-		// Switch ActivePlayer
-		ActivePlayer = (ActivePlayer == 1) ? 2 : 1;
+		final int n = moves[--nplies];
+		color[nplies & 1] ^= 1L << --height[n];
+		coins--;
+		gameOver = false;
+		pointsComputed = false;
+	}
 
-		// Update Board
-		Heights[x]--;
-		Board[x][Heights[x]] = 0;
-		Winner = -1;
+	/// Makes the specified move for the active player.
+	/**
+	 * Makes the specified move for the active player.  This updates the game
+	 * history and can be undone with unMakeMove.  If the move is illegal,
+	 * throws a RuntimeException exception.
+	 *
+	 * @param x The move to be made.
+	 * @throws RuntimeException If the move is illegal.
+	 * @see unMakeMove
+	 */
+	public void makeMove(final int x)
+	{
+		if(!canMakeMove(x))
+			throw new RuntimeException("Illegal Move: " + x);
+		color[nplies & 1] |= 1L << height[x]++;
+		++coins;
+		if(computeVictory(color[nplies & 1]))
+		{
+			gameOver = true;
+			Winner = (nplies & 1) + 1;
+		}
+		else if(coins == SIZE)
+		{
+			gameOver = true;
+			Winner = 0;
+		}
+		moves[nplies++] = x;
 	}
 
 	/// Check if there exists a victory condition.
@@ -136,7 +157,7 @@ public final class GameState_General implements GameStateModule
 	 */
 	public boolean isGameOver()
 	{
-		return Winner != -1;
+		return gameOver;
 	}
 
 	/// Return the winner of the current game.
@@ -150,57 +171,11 @@ public final class GameState_General implements GameStateModule
 	 * @throws RuntimeException If the game is not over.
 	 * @see isGameOver
 	 */
-	public int getWinner() throws RuntimeException
+	public int getWinner()
 	{
-		if(!isGameOver())
+		if(!gameOver)
 			throw new RuntimeException("Cannot get winner; game isn't over.");
 		return Winner;
-	}
-
-	/// Used internally to check for victory.
-	/**
-	 * Determines if a player has won the game and updates the state accordingly.
-	 */
-	private void computeVictory()
-	{
-		// for each column
-		for(int i = 0; i < WIDTH; i++)
-			// for each row
-			for(int j = 0; j < HEIGHT; j++)
-				// if not empty
-				if(Board[i][j] != 0)
-					for(int dx = -1; dx <= 1; dx++)
-						for(int dy = -1; dy <= 1; dy++)
-						{
-							if(dx == 0 && dy == 0)
-								continue;
-
-							// If extent is out of bounds, abort.
-							if(i + 3 * dx < 0 || i + 3 * dx >= WIDTH || j + 3 * dy < 0 || j + 3 * dy >= HEIGHT)
-								continue;
-
-							boolean victory = true;
-							for(int step = 1; step <= 3; step++)
-								if(Board[i][j] != Board[i + step * dx][j + step * dy])
-								{
-									victory = false;
-									break;
-								}
-
-							if(victory)
-							{
-								startPt = new Point(i, j);
-								endPt = new Point(i + 3 * dx, j + 3 * dy);
-								Winner = Board[i][j];
-								return;
-							}
-						}
-
-		if(Coins == WIDTH * HEIGHT)
-		{
-			Winner = 0;
-			return;
-		}
 	}
 
 	/// Returns the index of the active player.
@@ -210,9 +185,7 @@ public final class GameState_General implements GameStateModule
 	 */
 	public int getActivePlayer()
 	{
-		if(isGameOver())
-			throw new RuntimeException("Game is over; there is no active player.");
-		return ActivePlayer;
+		return (nplies & 1) + 1;
 	}
 
 	/// Returns what coin is at the given location.
@@ -227,7 +200,12 @@ public final class GameState_General implements GameStateModule
 	 */
 	public int getAt(final int x, final int y)
 	{
-		return Board[x][y];
+		final long bit = 1L << (x * H1 + y);
+		if((color[0] & bit) != 0)
+			return 1;
+		if((color[1] & bit) != 0)
+			return 2;
+		return 0;
 	}
 
 	/// Returns the height of the given column.
@@ -237,7 +215,7 @@ public final class GameState_General implements GameStateModule
 	 */
 	public int getHeightAt(final int x)
 	{
-		return Heights[x];
+		return height[x] - (x * H1);
 	}
 
 	/// Returns the width of the board.
@@ -264,7 +242,7 @@ public final class GameState_General implements GameStateModule
 	 */
 	public int getCoins()
 	{
-		return Coins;
+		return coins;
 	}
 
 	/// Used by the graphics module.
@@ -276,6 +254,12 @@ public final class GameState_General implements GameStateModule
 	 */
 	public Point getStartPt()
 	{
+		if(!gameOver)
+			throw new RuntimeException("Cannot get start/end points until the game is over");
+		if(!pointsComputed || startPt == null)
+			computePoints();
+		if(startPt == null)
+			throw new RuntimeException("Could not compute points");
 		return startPt;
 	}
 
@@ -288,6 +272,50 @@ public final class GameState_General implements GameStateModule
 	 */
 	public Point getEndPt()
 	{
+		if(!gameOver)
+			throw new RuntimeException("Cannot get start/end points until the game is over");
+		if(!pointsComputed || endPt == null)
+			computePoints();
+		if(endPt == null)
+			throw new RuntimeException("Could not compute points");
 		return endPt;
+	}
+
+	/// Used internally to find the start and end coordinates of the victory.
+	private void computePoints()
+	{
+		if(Winner == 0)
+		{
+			startPt = new Point(-1, -1);
+			endPt = new Point(-1, -1);
+		}
+
+		for(int x = 0; x < WIDTH; x++)
+			for(int y = 0; y < HEIGHT; y++)
+			{
+				if(getAt(x, y) != Winner)
+					continue;
+				for(int dx = -1; dx <= 1; dx++)
+					next:
+					for(int dy = -1; dy <= 1; dy++)
+					{
+						if(dx == dy && dy == 0)
+							continue;
+						if(x + (3 * dx) >= WIDTH)
+							continue;
+						if(y + (3 * dy) >= HEIGHT)
+							continue;
+						if(x + (3 * dx) < 0)
+							continue;
+						if(y + (3 * dy) < 0)
+							continue;
+						for(int i = 0; i < 4; i++)
+							if(getAt(x + (i * dx), y + (i * dy)) != Winner)
+								continue next;
+						startPt = new Point(x, y);
+						endPt = new Point(x + (3 * dx), y + (3 * dy));
+						return;
+					}
+			}
 	}
 }

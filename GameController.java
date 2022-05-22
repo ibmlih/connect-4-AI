@@ -1,10 +1,7 @@
 /// Coordinates the game classes and runs the game.
 /**
  * This class is responsible for gluing together the AI and human input modules
- * to play a game of Connect Four.  You will not need to modify the contents
- * of this class, though it may be useful to glance over its contents before writing
- * your AI implementation.
- * 
+ * to play a game of Connect Four. 
  */
 public final class GameController
 {
